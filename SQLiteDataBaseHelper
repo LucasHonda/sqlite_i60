@@ -1,0 +1,173 @@
+package visaogrupo.com.br.kleyhertz.Utils.DB;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteOpenHelper;
+import android.os.Environment;
+import android.util.Log;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+
+public class SQLiteDataBaseHelper extends SQLiteOpenHelper {
+
+    private static final String TAG_CLASS = "Database Acess";
+
+    private static final String PREFS = "PREFS_DB";
+    private static final String PREFS_VERSAO = "PREFS_DB_VERSAO";
+
+    private static final String RES = "raw";
+    private static final String FILECREATE = "create";
+    private static final String FILEDROP = "drop";
+
+    private static File sdCard = Environment.getExternalStorageDirectory();
+    public final static File SDDIRETORIO = new File(sdCard.getAbsolutePath()+"/kleyhertz");
+    public final static String DATABASE_NAME = SDDIRETORIO.getAbsolutePath()+"/";
+
+    private static Context _context;
+    public static String _nomeDB = "";
+
+    private static SQLiteDatabase instanceDB = null;
+
+    public SQLiteDataBaseHelper(Context context, String name, int version) {
+        super(context, name, null, version);
+
+        _nomeDB = name;
+        _context = context;
+    }
+
+    @Override
+    public void onCreate(SQLiteDatabase db) {
+        //Executa leitura e executa o arquivo de CRIACAO
+        this.executaLeitura(db, SQLiteDataBaseHelper.FILECREATE);
+    }
+
+    @Override
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        //Executa leitura e executa o arquivo de DROP
+        this.executaLeitura(db, SQLiteDataBaseHelper.FILEDROP);
+        //Re-cria o banco
+        this.onCreate(db);
+    }
+
+    /**
+     * Leitura e execução das querys em determinado arquivo
+     * @param db
+     * @param file
+     */
+    private void executaLeitura(SQLiteDatabase db, String file) {
+        BufferedReader _reader;
+        InputStream _inputStream;
+        String _linhaQuery;
+        int _fileId;
+
+        try {
+
+            //Obtem ID do arquivo
+            _fileId = _context.getResources().getIdentifier(file, SQLiteDataBaseHelper.RES, _context.getPackageName());
+
+            //Verifica se o ID existe
+            if (_fileId > 0) {
+
+                //Obtem input stream do arquivo @FILETABLES no res @RAW
+                _inputStream = _context.getResources().openRawResource(_fileId);
+
+                //Verifica se tem dados no inputStream
+                if (_inputStream.available() > 0) {
+
+                    //Inicializa BufferReader com todos os dados do inputStream
+                    _reader = new BufferedReader(new InputStreamReader(_inputStream));
+
+                    //Inicializa transaction
+                    db.beginTransaction();
+
+                    //Percorre linha a linha
+                    while ((_linhaQuery = _reader.readLine()) != null) {
+                        _linhaQuery = _linhaQuery.trim();
+                        if (!_linhaQuery.isEmpty() && !_linhaQuery.startsWith("--"))
+                            db.execSQL(_linhaQuery);
+                    }
+
+                    //Fecha reader
+                    _reader.close();
+
+                    //Finaliza transaction
+                    db.setTransactionSuccessful();
+                }
+            }
+
+        } catch (Exception e){
+            Log.e(TAG_CLASS, "Erro: " + e);
+        } finally {
+            if(db.inTransaction())
+                db.endTransaction();
+        }
+    }
+
+    /**
+     * Recebi versao do banco
+     * @param _
+     * @return
+     */
+    public static int getVersao(Context _){
+        SharedPreferences _shared = _.getSharedPreferences(SQLiteDataBaseHelper.PREFS, Context.MODE_PRIVATE);
+        return _shared.getInt(SQLiteDataBaseHelper.PREFS_VERSAO, 1);
+    }
+
+    /**
+     * Metodo que cria o banco de dados
+     * @param context
+     * @param versao
+     * @return
+     */
+    public static void criaDB(Context context, String nome, int versao) throws Exception {
+        SharedPreferences _shared = context.getSharedPreferences(SQLiteDataBaseHelper.PREFS, Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor;
+
+        editor = _shared.edit();
+        editor.putInt(SQLiteDataBaseHelper.PREFS_VERSAO, versao);
+        editor.apply();
+
+        SQLiteDatabase db = SQLiteDataBaseHelper.openDB(context, nome);
+
+        SQLiteDataBaseHelper.closeDB(db);
+    }
+
+    /**
+     * Abre banco de dados
+     * @param context
+     * @return
+     */
+    public static synchronized SQLiteDatabase openDB(Context context) throws Exception {
+        return SQLiteDataBaseHelper.openDB(context, _nomeDB);
+    }
+
+    /**
+     * Abre banco de dados
+     * @param context
+     * @return
+     */
+    public static SQLiteDatabase openDB(Context context, String nome) throws Exception {
+        int versao = SQLiteDataBaseHelper.getVersao(context);
+
+        SQLiteDataBaseHelper db = new SQLiteDataBaseHelper(context, nome, versao);
+
+        return db.getWritableDatabase();
+    }
+
+    /**
+     * Fecha banco de dados
+     * @param db
+     */
+    public static void closeDB(SQLiteDatabase db) {
+        if (db != null && db.isOpen()) {
+            if (db.inTransaction())
+                db.endTransaction();
+
+            db.close();
+        }
+    }
+}
